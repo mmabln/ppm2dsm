@@ -14,9 +14,9 @@ DSM2 serial frame format is this:
   - byte 1: 0x80 == BIND mode, 0x00 = NORMAL mode
   - byte 2: 0x00
  
-channel data:
-- byte 1:
-  - bit 0-1:  Bits 8-9 of channel data
-  - bit 2-4:  Channel number
-- byte 2:
-  - bit 0-7:  Bits 0-7 of channel data
+- channel data:
+  - byte 1:
+    - bit 0-1:  Bits 8-9 of channel data
+    - bit 2-4:  Channel number
+  - byte 2:
+    - bit 0-7:  Bits 0-7 of channel data
