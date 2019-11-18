@@ -6,7 +6,7 @@ This version has been tested with STM32F030 F4P6
 HW connections to STM32F030 are as this:
 - PA0   LED output (active low, connect RED LED in series ~1kOhm to Vdd)
 - PA1   Bind button input, active low, connect to pushbutton to ground
-- PA2   Serial output
+- PA2   Serial DSM output
 - PA9   PPM input
 
 DSM2 serial frame format is this:
