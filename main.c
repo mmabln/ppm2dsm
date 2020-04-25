@@ -48,14 +48,21 @@
 
 //--- Defines
 
-// maximum number of channels we can decode, don't increase this above 8
-
-#define MAX_CHANNELS      6
-
 // max number of DSM2 Channels transmitted. Some tranceiver  modules 
-// can't handle mor than six channels. Don't increase this above 8
+// can't handle more than six channels. Don't increase this above 8
 
 #define DSM2_CHANNELS     6
+
+// maximum number of channels we will accept at all. Set to DSM2_CHANNELS normally.
+// If we receive additional channels by PPM, they will just be ignored.
+
+#define MAX_CHANNELS      DSM2_CHANNELS
+
+// Channel used for BIND function
+// If the value on this channel is higher than RANGE_MID (see below) right after startup,
+// we will enter BIND mode until value is below RANGE_MID
+
+#define CHAN_BIND         0
 
 // DSM2 serial output baud rate, has to be changed for other modules
 
@@ -67,7 +74,7 @@
 
 // Valid frames before output is not failsafe
 
-#define VALID_FRAMES      2
+#define VALID_FRAMES      5
 
 // CPU clock - change if you changed the clock config
 
@@ -78,6 +85,9 @@
 #define TIMER_PRESCALER   (F_CPU / 1000000 - 1) // Timer prescaler, tick = 1us
 #define PULSE_LENGTH_MIN  750                   // Min ticks of valid pulse
 #define PULSE_LENGTH_MAX  2250                  // Max ticks of valid pulse
+#define RANGE_MIN         1000                  // Min value of channel
+#define RANGE_MID         1500                  // Mid/neutral value of channel
+#define RANGE_MAX         2000                  // Max value of channel
 #define SYNC_LENGTH_MIN   5000                  // Min ticks of sync gap
 #define PULSE_TIMEOUT     50000                 // Pulse timeout
 
@@ -93,6 +103,11 @@ typedef enum {
   S_WAIT, S_OK, S_FAILSAFE
 } state_t;
 
+// Flags for BIND mode
+
+#define BIND_JUMP   0x01                // BIND through jumper
+#define BIND_CHAN   0x02                // BIND mode through channel
+
 // Functions
 
 void ppm2dsm(uint16_t ppm[], uint8_t *dsm, int num_chan, uint8_t bindmode, const int chan_map[]);
@@ -107,7 +122,7 @@ void init_hw(void);
 // all other to neutral
 
 static uint16_t frame_data_failsafe[MAX_CHANNELS] = {
-  1000, 1500, 1500, 1500, 1500, 1500
+  RANGE_MIN, RANGE_MID, RANGE_MID, RANGE_MID, RANGE_MID, RANGE_MID, RANGE_MIN
 };
 
 // Channel mapping input -> output
@@ -131,6 +146,7 @@ volatile static uint16_t timer_counter = 0; // 0.1s counter for timing purposes
 void main(void) {
   static uint8_t dsm2_data[2+DSM2_CHANNELS*2];
   uint16_t timer_last = 0;
+  uint8_t check_for_bind = 1;
 
   // Some initialization
 
@@ -156,9 +172,27 @@ void main(void) {
       }
       else if (ppm_state == S_OK && frame_data_new) {
         frame_data_lock = 1;
+
+        // Check if we have to enter initial bind mode
+
+        if (check_for_bind) {
+          if (frame_data[CHAN_BIND] > RANGE_MID) {
+            bind_mode |= BIND_CHAN;
+          }
+          else {
+            bind_mode &= ~BIND_CHAN;
+            check_for_bind = 0;
+          }
+        }
+
+        // Convert channel data
+
         ppm2dsm((uint16_t *)frame_data, dsm2_data, chan_detected, bind_mode, chan_map);
         frame_data_new = 0;
         frame_data_lock = 0;
+
+        // Output channel data
+
         send_dsm(dsm2_data, chan_detected);
       }
     }
@@ -182,6 +216,7 @@ void main(void) {
 
 
 /** \brief Compute DSM2 data from ppm
+ *  If more channels are supplied than defined by DSM2_CHANNELS, they will be ignored.
  */
 void ppm2dsm(uint16_t ppm[], uint8_t *dsm, int num_chan, uint8_t bindmode, const int chan_map[]) {
   uint16_t ppm_chan;
@@ -199,9 +234,19 @@ void ppm2dsm(uint16_t ppm[], uint8_t *dsm, int num_chan, uint8_t bindmode, const
 
   // Write channel data
 
+  if (num_chan > DSM2_CHANNELS) {
+    num_chan = DSM2_CHANNELS;
+  }
+
   for (int i = 0; i < num_chan; i++) {
-    ppm_chan = ppm[chan_map[i]]-1000;
-    ppm_chan &= 0x3ff;
+    ppm_chan = ppm[chan_map[i]];
+    if (ppm_chan < RANGE_MIN) {
+      ppm_chan = RANGE_MIN;
+    }
+    else if (ppm_chan > RANGE_MAX) {
+      ppm_chan = RANGE_MAX;
+    }
+    ppm_chan = (ppm_chan-RANGE_MIN) & 0x3ff;
     *dsm++ = (i << 2) | (ppm_chan >> 8);
     *dsm++ = ppm_chan & 0xff;
   }
@@ -309,11 +354,13 @@ void TIM14_IRQHandler(void) {
       }
     }
 
-    if (GPIOA->IDR & GPIO_IDR_1) {
-      bind_mode = 0;
-    }
-    else {
-      bind_mode = 1;
+    if (frame_data_lock == 0) {
+      if (GPIOA->IDR & GPIO_IDR_1) {
+        bind_mode &= (~BIND_JUMP);
+      }
+      else {
+        bind_mode |= BIND_JUMP;
+      }
     }
   }
 }
@@ -355,8 +402,8 @@ void TIM1_CC_IRQHandler(void) {
 
       if (pulses_read < MAX_CHANNELS) {       // Store pulse length
         pulses[pulses_read] = pulse_length;
+        pulses_read++;
       }
-      pulses_read++;
     }
     else if (pulse_length >= SYNC_LENGTH_MIN) { // Check if SYNC
       if (pulses_read == chan_last) {         // Num. of channels constant?
@@ -365,12 +412,7 @@ void TIM1_CC_IRQHandler(void) {
       }
       else {
         frames_read = 0;
-        if(pulses_read <= MAX_CHANNELS) {
-          chan_last = pulses_read;
-        }
-        else {
-          chan_last = 0;
-        }
+        chan_last = pulses_read;
       }
       pulses_read = 0;
     }
