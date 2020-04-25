@@ -5,7 +5,7 @@ This version has been tested with STM32F030 F4P6
 
 HW connections to STM32F030 are as this:
 - PA0   LED output (active low, connect RED LED in series ~1kOhm to Vdd)
-- PA1   Bind button input, active low, connect to pushbutton to ground
+- PA1   Bind button input, active low, connect to pushbutton to ground (optional)
 - PA2   Serial DSM output
 - PA9   PPM input
 
@@ -20,3 +20,6 @@ DSM2 serial frame format is this:
     - bit 2-4:  Channel number
   - byte 2:
     - bit 0-7:  Bits 0-7 of channel data
+
+ENTER BIND MODE
+You can enter BIND mode by putting throttle stick (chan #1) higher than mid position when turning on the sender. BIND mode is left when throttle stick is below mid position.
