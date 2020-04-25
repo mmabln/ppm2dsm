@@ -22,4 +22,5 @@ DSM2 serial frame format is this:
     - bit 0-7:  Bits 0-7 of channel data
 
 ENTER BIND MODE
+
 You can enter BIND mode by putting throttle stick (chan #1) higher than mid position when turning on the sender. BIND mode is left when throttle stick is below mid position.
